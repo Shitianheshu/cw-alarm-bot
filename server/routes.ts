@@ -20,6 +20,7 @@ import * as pastWorkController from "./controller/pastWorkController";
 import * as jobController from "./controller/jobController";
 import * as blockedClientController from "./controller/blockedClientController";
 import * as adminController from "./controller/adminController";
+import * as marketAnalysisController from "./controller/marketAnalysisController";
 import UserModel from "./models/User";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -402,6 +403,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(analytics);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to get analytics" });
+    }
+  });
+
+  app.get("/api/admin/market/status", requireAuth, requireAdmin, async (_req: any, res: Response) => {
+    try {
+      res.json(marketAnalysisController.getMarketStatus());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get market status" });
+    }
+  });
+
+  app.get("/api/admin/market/report", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    try {
+      const hours = Number(req.query.hours);
+      const report = await marketAnalysisController.buildMarketReport(Number.isFinite(hours) ? hours : undefined);
+      res.json(report);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to build market report" });
+    }
+  });
+
+  app.get("/api/admin/market/timestamps", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    try {
+      const hours = Number(req.query.hours);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=\"cw-jobs.csv\"");
+      await marketAnalysisController.writeTimestampCsv((chunk: string) => {
+        res.write(chunk);
+      }, Number.isFinite(hours) ? hours : undefined);
+      res.end();
+    } catch (error: any) {
+      if (!res.headersSent) res.status(500).json({ error: error.message || "Failed to export timestamps" });
+      else res.end();
+    }
+  });
+
+  app.post("/api/admin/market/scan", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    try {
+      const hours = Number(req.body?.hours);
+      const maxJobs = Number(req.body?.maxJobs);
+      const result = marketAnalysisController.scanRecentJobs({
+        hours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
+        maxJobs: Number.isFinite(maxJobs) && maxJobs > 0 ? maxJobs : undefined,
+        notify: req.body?.notify !== false,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to start scan" });
+    }
+  });
+
+  app.post("/api/admin/market/watch", requireAuth, requireAdmin, async (_req: any, res: Response) => {
+    try {
+      res.json(marketAnalysisController.startMarketWatch());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to start watch" });
+    }
+  });
+
+  app.post("/api/admin/market/stop", requireAuth, requireAdmin, async (_req: any, res: Response) => {
+    try {
+      res.json(marketAnalysisController.stopMarketWatch());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to stop watch" });
     }
   });
 

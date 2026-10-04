@@ -1,5 +1,5 @@
-import axios from "axios";
 import * as cheerio from "cheerio";
+import { cwGet } from "@Server/utils/cwHttp";
 import Job from "@Server/models/Job";
 import { scrapeJobs } from "@Server/service/scraper";
 import { delay } from "@Server/utils";
@@ -13,6 +13,7 @@ import { singleAutoBid } from "@Server/service/bidder";
 import * as bidHistoryController from "@Server/controller/bidHistoryController";
 import { SingleBid } from "@Server/models/BidHistory";
 import * as blockedClientController from "@Server/controller/blockedClientController";
+import { recordLiveJob } from "@Server/service/marketAnalysis";
 
 const GROUP_ID = process.env.GROUP_ID || 0;
 let scrapingInterval: NodeJS.Timeout | null = null;
@@ -195,6 +196,13 @@ export const startScraping = (intervalMs: number = 5000) => {
           job.desc = jobDetail || '';
 
           new Job(job).save().then();
+          recordLiveJob({
+            id: Number(job.id),
+            title: job.title,
+            categoryId: Number(job.categoryId) || 0,
+            clientId: Number(job.clientId) || 0,
+            postedDate: job.postedDate,
+          }).catch((error) => console.error("recordLiveJob:", error));
 
           const isBlockedClient = blockedIds.has(Number(job.clientId));
           if (isBlockedClient) {
@@ -245,7 +253,7 @@ export const getScrapingStatus = () => {
 export const getJobDetail = async (jobId: number | string): Promise<string | null> => {
   const url = `https://crowdworks.jp/public/jobs/${jobId}`;
   try {
-    const response = await axios.get(url);
+    const response = await cwGet(url);
     const $ = cheerio.load(response.data);
 
     const td = $('td.confirm_outside_link').first();

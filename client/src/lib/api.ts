@@ -1,8 +1,9 @@
 import axios from 'axios';
 // Create axios instance with default config
 const api = axios.create({
-    baseURL: ' https://specimen-juncture-itunes.ngrok-free.dev',
-    // baseURL: import.meta.env.VITE_API_URL || ' https://specimen-juncture-itunes.ngrok-free.dev',
+    baseURL: import.meta.env.DEV
+        ? ""
+        : (import.meta.env.VITE_API_URL || "https://specimen-juncture-itunes.ngrok-free.dev"),
     headers: {
         'Content-Type': 'application/json'
     }

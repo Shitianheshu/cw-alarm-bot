@@ -12,6 +12,7 @@ import {
   Briefcase,
   CalendarCheck,
   Ban,
+  Radar,
 } from "lucide-react";
 import {
   Sidebar,
@@ -97,6 +98,11 @@ const adminMenuItems = [
     title: "Blocked Clients",
     url: "/admin/blocked-clients",
     icon: Ban,
+  },
+  {
+    title: "Market watch",
+    url: "/admin/market",
+    icon: Radar,
   },
 ];
 

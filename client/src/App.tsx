@@ -24,6 +24,7 @@ const AdminDashboard = lazy(() => import("@/pages/admin"));
 const UserManagement = lazy(() => import("@/pages/admin/users"));
 const AdminAnalytics = lazy(() => import("@/pages/admin/analytics"));
 const BlockedClients = lazy(() => import("@/pages/admin/blocked-clients"));
+const AdminMarket = lazy(() => import("@/pages/admin/market"));
 const AccessDenied = lazy(() => import("@/pages/access-denied"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -176,6 +177,17 @@ function Router() {
               <AdminGuard>
                 <DashboardLayout isAdmin>
                   <AdminAnalytics />
+                </DashboardLayout>
+              </AdminGuard>
+            </AuthGuard>
+          )}
+        </Route>
+        <Route path="/admin/market">
+          {() => (
+            <AuthGuard>
+              <AdminGuard>
+                <DashboardLayout isAdmin>
+                  <AdminMarket />
                 </DashboardLayout>
               </AdminGuard>
             </AuthGuard>

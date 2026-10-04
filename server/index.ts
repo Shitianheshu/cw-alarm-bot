@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 
 import { launchBot, sendMessage } from "@Server/telegram";
 import { connectDBWithRetry } from "@Server/db";
+import { startAnalysisAlarm, startCheckpointWorker, startMarketWatch } from "@Server/service/marketAnalysis";
 
 const app = express();
 
@@ -102,6 +103,9 @@ server.listen({
 
 (async () => {
   await connectDBWithRetry();
+  startCheckpointWorker();
+  if (process.env.ANALYSIS_ALARM !== "false") startAnalysisAlarm();
+  else if (process.env.ANALYSIS_AUTOSTART === "true") startMarketWatch();
   const status = await launchBot();
   console.log(status);
 })();

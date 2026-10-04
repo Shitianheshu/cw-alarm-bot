@@ -27,6 +27,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (telegramLoading) return;
 
       if (!telegramUser) {
+        // Vite dev server only. Production builds drop this branch.
+        if (import.meta.env.DEV) {
+          const previewId = String(import.meta.env.VITE_PREVIEW_TELEGRAM_ID || "");
+          setUser({
+            id: "local-preview",
+            telegramId: previewId,
+            telegramUsername: "preview",
+            email: "preview@local",
+            password: "",
+            fullName: "Local preview",
+            role: "superadmin",
+            status: "allowed",
+            createdAt: new Date(),
+          });
+          setIsAllowed(true);
+        }
         setIsLoading(false);
         return;
       }
@@ -80,10 +96,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const previewTelegramUser =
+    import.meta.env.DEV && !telegramUser
+      ? {
+          id: Number(import.meta.env.VITE_PREVIEW_TELEGRAM_ID || 0),
+          first_name: "Local",
+          username: "preview",
+        }
+      : telegramUser;
+
   return (
     <AuthContext.Provider value={{
       user,
-      telegramUser,
+      telegramUser: previewTelegramUser,
       login,
       logout,
       updateUser,

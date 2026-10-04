@@ -1,5 +1,5 @@
-import axios from 'axios'
 import * as cheerio from 'cheerio';
+import { cwGet } from "@Server/utils/cwHttp";
 import Job from '@Server/models/Job';
 
 let scrapStatus = true;
@@ -44,7 +44,7 @@ export const scrapeJobs = async () => {
   const aggregatedNewJobs: any[] = [];
 
   for (let i = 0; i < searchUrls.length; i++) {
-    const response = await axios.get(searchUrls[i]);
+    const response = await cwGet(searchUrls[i]);
     const $ = cheerio.load(response.data);
     const vueContainer = $('#vue-container');
     const dataAttr = vueContainer.attr('data');

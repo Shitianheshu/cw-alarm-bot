@@ -1,4 +1,5 @@
 import axios from "axios";
+import { cwRequestConfig } from "@Server/utils/cwHttp";
 import CwProfileModel from "@Server/models/CwProfile";
 import Job from "@Server/models/Job";
 import { createBidText } from "@Server/controller/openAiController";
@@ -76,10 +77,10 @@ export async function placeBid(params: PlaceBidParams): Promise<PlaceBidResult> 
         const placeBidResponse = await axios.post(
             `https://crowdworks.jp/proposals`,
             data,
-            {
-                headers: headers,
-                timeout: 300000 // 300 seconds timeout
-            }
+            cwRequestConfig({
+                headers,
+                timeout: 300000,
+            })
         );
         if (placeBidResponse.status >= 200 && placeBidResponse.status < 300) {
             return { success: true, message: `Bid submitted successfully. Status: ${placeBidResponse.status}` };
