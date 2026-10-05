@@ -1,5 +1,5 @@
 import JobObservation from "@Server/models/JobObservation";
-import { cwGet } from "@Server/utils/cwHttp";
+import { cwGet, cwProxyLabel } from "@Server/utils/cwHttp";
 import { sendMessage } from "@Server/telegram";
 import { delay } from "@Server/utils";
 import {
@@ -147,7 +147,7 @@ async function fetchSearchPage(page: number): Promise<ObservedJobInput[]> {
     params: { order: "new", page },
   });
   if (response.status === 403) {
-    throw new Error("CrowdWorks returned 403. The scan could not read public job listings.");
+    throw new Error(`CrowdWorks returned 403 (${cwProxyLabel()}). The scan could not read public job listings.`);
   }
   if (response.status !== 200) throw new Error(`CrowdWorks search failed with status ${response.status}`);
   return parseSearchHtml(String(response.data)).map(toObserved).filter((job): job is ObservedJobInput => job != null);
