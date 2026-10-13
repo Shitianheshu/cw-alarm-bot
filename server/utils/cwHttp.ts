@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from "axios";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import config from "@Server/config";
 
@@ -76,12 +77,9 @@ export function cwRequestConfig(extra?: AxiosRequestConfig): AxiosRequestConfig 
     return base;
   }
 
-  base.proxy = {
-    protocol,
-    host: parsed.hostname,
-    port: Number(parsed.port || (protocol === "https" ? 443 : 80)),
-    ...(username ? { auth: { username, password } } : {}),
-  };
+  const agent = new HttpsProxyAgent(withScheme(raw));
+  base.httpAgent = agent;
+  base.httpsAgent = agent;
   return base;
 }
 

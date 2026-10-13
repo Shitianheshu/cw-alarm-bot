@@ -48,7 +48,7 @@ ANALYSIS_ALARM_MINUTES=1,2,5,10,20,30
 | `GROUP_ID` | no | Telegram group used by the older job scraper |
 | `LATEST_JOB_ID` | no | Resume cursor for the older scraper |
 
-Leave `PROXY` empty. On the VPS, set `CW_BROWSER=true` so CrowdWorks is opened in the Chrome window where Urban VPN is on. See **Run on a VPS**.
+`PROXY` is the HTTP proxy on the VPS. See **Fix the proxy**. Leave `CW_BROWSER` unset.
 
 ## 4. Connect MongoDB
 
@@ -148,59 +148,76 @@ Production (`npm run build` then `npm start`) serves the built UI from the same 
 
 The alarm starts with the server. Empty 1- and 2-minute slices stay quiet. Slices of 5 minutes and longer always send, including a zero count. Full per-job timestamps stay in Mongo and in the CSV export on the Market watch page. Telegram receives the summary only.
 
-## 7. Run on a VPS with Urban VPN
+## 7. Fix the proxy on Windows
 
-CrowdWorks returns 403 from the VPS address as well. The Node process cannot use a Chrome extension by itself. The scan opens pages inside the Chrome profile where Urban VPN is installed, so that extension carries the request.
+The app on this PC is already using `PROXY`. Port 808 on `23.27.169.17` accepts a connection and then sends no HTTP reply, so the watch logs `ETIMEDOUT`. Install a real HTTP proxy on that Windows machine. Use Remote Desktop to open it. PowerShell below is run as Administrator.
 
-Install Google Chrome and the Urban VPN extension on the VPS. Turn Urban VPN on and confirm `https://crowdworks.jp/public/jobs/search?order=new` loads in that window.
+1. See which program owns port 808.
 
-Close every Chrome window, then start Chrome with a debugging port so the app can use that same window:
-
-```bash
-google-chrome --remote-debugging-port=9222
+```powershell
+netstat -ano | findstr :808
 ```
 
-Turn Urban VPN on again in that window and leave it open.
+The last column is the process id. Look up the name:
 
-`.env` on the VPS:
-
-```env
-BOT_TOKEN=123456:replace-with-your-token
-ADMIN_ID=8195097816
-MONGODB_URI=mongodb://127.0.0.1:27017/cw-alarm-bot
-PORT=5001
-ANALYSIS_CHAT_ID=8195097816
-ANALYSIS_ALARM_MINUTES=1,2,5,10,20,30
-NODE_ENV=production
-CW_BROWSER=true
+```powershell
+tasklist /FI "PID eq PASTE_THE_PID"
 ```
 
-Leave `PROXY` unset. Then:
+2. Stop that program so port 808 is free. In Task Manager, end that process, or:
 
-```bash
-npm install
-npm run build
-NODE_ENV=production npm start
+```powershell
+taskkill /PID PASTE_THE_PID /F
 ```
 
-`NODE_ENV=production` is required. The log should include `using the open Chrome on port 9222`. Run `/market_scan` after that.
+3. Download the Windows zip of [3proxy](https://github.com/3proxy/3proxy/releases) and unzip it to `C:\3proxy`.
 
-If Chrome was already open without the debugging port, the app tells you to quit it and start it with `--remote-debugging-port=9222`. A 403 after Chrome is attached means Urban VPN is off in that window.
+4. Save `C:\3proxy\3proxy.cfg`. Use the same username and password as `PROXY` in `.env`.
 
-On a VPS with no desktop, install a virtual display before starting Chrome:
-
-```bash
-sudo apt-get install -y xvfb
-xvfb-run -a google-chrome --remote-debugging-port=9222
+```text
+auth strong
+users YOUR_USER:CL:YOUR_PASSWORD
+allow YOUR_USER
+proxy -p808 -i0.0.0.0
 ```
 
-Telegram does not need an open inbound port. Open `5001` only if you want the web UI from outside the VPS.
+5. Allow inbound TCP 808 in Windows Firewall.
+
+```powershell
+New-NetFirewallRule -DisplayName "HTTP proxy 808" -Direction Inbound -Protocol TCP -LocalPort 808 -Action Allow
+```
+
+6. Start the proxy and leave that window open.
+
+```powershell
+C:\3proxy\bin64\3proxy.exe C:\3proxy\3proxy.cfg
+```
+
+If `3proxy.exe` is directly in `C:\3proxy`, use that path instead of `bin64`.
+
+7. On that same Windows server, this must print `23.27.169.17`. In PowerShell, `curl` is not curl, so call `curl.exe`. Keep the single quotes.
+
+```powershell
+curl.exe -x 'http://YOUR_USER:YOUR_PASSWORD@127.0.0.1:808' https://api.ipify.org
+```
+
+8. On this PC, the same command with `23.27.169.17` instead of `127.0.0.1` must also print `23.27.169.17`.
+
+9. In this project folder, stop the bot with Ctrl+C and start it again:
+
+```powershell
+npm run dev
+```
+
+The log should say `CrowdWorks requests via http://23.27.169.17:808` and should stop printing `ETIMEDOUT`. Then send `/market_scan` in Telegram.
+
+A later `403` means the proxy answered and CrowdWorks refused that server's address. A timeout means 3proxy is not the program listening on port 808.
 
 ## 8. What “healthy” looks like
 
 - `http://127.0.0.1:5001/api/admin/market/status?telegramId=YOUR_ADMIN_ID` returns JSON, not a connection error.
 - The bot answers `/market_report`.
-- A scan that cannot read CrowdWorks posts `CW相場スキャン失敗` with HTTP 403. Chrome is attached, but Urban VPN is off in that window.
+- A scan that cannot read CrowdWorks posts `CW相場スキャン失敗` with HTTP 403. The proxy answered, and CrowdWorks refused the VPS address.
 
 ## 9. Stop
 

@@ -1,5 +1,8 @@
 /** Bid checkpoints measured from the moment a job is posted. */
-export const BID_WINDOWS_MIN = [1, 3, 5, 10, 20, 30] as const;
+export const BID_WINDOWS_MIN = [1, 2, 5, 10, 20, 30] as const;
+
+/** Bids already visible at this minute are treated as bot bids. */
+export const BOT_SAMPLE_MINUTE = 2;
 
 export type BidWindowMin = (typeof BID_WINDOWS_MIN)[number];
 
@@ -89,7 +92,7 @@ export function median(nums: number[]): number | null {
 }
 
 /**
- * Bids visible at the 3-minute mark are treated as bot bids (placed within 1–3 minutes).
+ * Bids visible at the 2-minute mark are treated as bot bids (placed within 1–2 minutes).
  * `approx` is the median of the busiest 20% of those jobs (each bot bids at most once).
  * `atLeast` is the busiest single job, a lower bound on bots that raced the same posting.
  */
@@ -179,8 +182,18 @@ function findBidCountInJson(node: unknown, depth = 0): number | null {
   return null;
 }
 
+/** `応募した人` / `契約した人` cells in the public job page status table. */
+function applicationTableCount(html: string, label: string): number | null {
+  const match = html.match(new RegExp(`${label}</th>\\s*<td>\\s*(\\d+)\\s*人`));
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isFinite(count) ? count : null;
+}
+
 /** Reads the public proposal count from a CrowdWorks job HTML page. */
 export function parseBidCount(html: string): number | null {
+  const fromTable = applicationTableCount(html, "応募した人");
+  if (fromTable != null) return fromTable;
   if (/この仕事への応募はまだありません|応募した人はいません|まだ応募はありません/.test(html)) return 0;
 
   const attr = html.match(/id="vue-container"[^>]*\sdata="([^"]+)"/) || html.match(/\sdata="([^"]+)"[^>]*id="vue-container"/);
@@ -205,6 +218,110 @@ export function parseBidCount(html: string): number | null {
     if (match) return Number(match[1]);
   }
   return null;
+}
+
+export function contractStatusFrom(text: string, contractCount: number | null): string {
+  const value = text.toLowerCase();
+  if (/contracted|契約済|契約済み/.test(value) || (contractCount != null && contractCount > 0)) return "contracted";
+  if (/closed|expired|募集終了|終了/.test(value)) return "closed";
+  if (/open|published|recruiting|募集中/.test(value) || contractCount === 0) return "open";
+  return "unknown";
+}
+
+export function contractFromSearchItem(item: any): { contractCount: number | null; contractStatus: string } {
+  const contractCount = asCount(item?.entry?.project_entry?.num_contracts)
+    ?? asCount(item?.job_offer?.num_contracts)
+    ?? asCount(item?.entry?.num_contracts);
+  const statusText = String(
+    item?.job_offer?.status
+    ?? item?.job_offer?.job_offer_status
+    ?? item?.entry?.project_entry?.status
+    ?? "",
+  );
+  return { contractCount, contractStatus: contractStatusFrom(statusText, contractCount) };
+}
+
+/** Current bid count plus whether the job is still open or already contracted. */
+/** Task-format jobs (アンケート etc.) show "完了件数 83 件 / 300 件 (作業中 34件)" instead of an applicant table. */
+export function parseTaskCount(html: string): number | null {
+  const at = html.indexOf("num_completed_tasks");
+  if (at < 0) return null;
+  const text = html.slice(at, at + 600).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const match = text.match(/(\d[\d,]*)\s*件\s*\/\s*\d[\d,]*\s*件(?:\s*[(（]\s*作業中\s*(\d[\d,]*)\s*件)?/);
+  if (!match) return null;
+  const done = Number(match[1].replace(/,/g, ""));
+  const working = match[2] ? Number(match[2].replace(/,/g, "")) : 0;
+  return done + working;
+}
+
+export function parseJobFacts(html: string): { bidCount: number | null; contractCount: number | null; contractStatus: string; taskJob?: boolean } {
+  let contractCount: number | null = null;
+  let statusText = "";
+  const attr = html.match(/id="vue-container"[^>]*\sdata="([^"]+)"/) || html.match(/\sdata="([^"]+)"[^>]*id="vue-container"/);
+  if (attr?.[1]) {
+    try {
+      const json = JSON.parse(decodeHtmlAttr(attr[1]));
+      contractCount = findNamedCount(json, new Set(["num_contracts", "contract_count", "contracts_count"]));
+      statusText = findStatusText(json);
+    } catch {
+      // Visible text below still applies.
+    }
+  }
+  const contractedPeople = applicationTableCount(html, "契約した人");
+  if (contractedPeople != null) contractCount = contractedPeople;
+  if (/契約済|契約済み/.test(html)) statusText = statusText || "契約済み";
+  else if (/募集終了|この仕事の募集は終了/.test(html)) statusText = statusText || "募集終了";
+  else if (/募集中/.test(html)) statusText = statusText || "募集中";
+  const bidCount = parseBidCount(html);
+  const taskCount = bidCount == null ? parseTaskCount(html) : null;
+  return {
+    bidCount: bidCount ?? taskCount,
+    contractCount,
+    contractStatus: contractStatusFrom(statusText, contractCount),
+    ...(taskCount != null ? { taskJob: true } : {}),
+  };
+}
+
+function findNamedCount(node: unknown, keys: Set<string>, depth = 0): number | null {
+  if (depth > 8 || node == null) return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findNamedCount(item, keys, depth + 1);
+      if (found != null) return found;
+    }
+    return null;
+  }
+  if (typeof node !== "object") return null;
+  const record = node as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    if (!keys.has(key.toLowerCase())) continue;
+    const count = asCount(value);
+    if (count != null) return count;
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === "object") {
+      const found = findNamedCount(value, keys, depth + 1);
+      if (found != null) return found;
+    }
+  }
+  return null;
+}
+
+function findStatusText(node: unknown, depth = 0): string {
+  if (depth > 6 || node == null || typeof node !== "object") return "";
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findStatusText(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  const record = node as Record<string, unknown>;
+  for (const key of ["status", "job_offer_status", "recruitment_status"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
 }
 
 export function bidCountFromSearchItem(item: any): number | null {

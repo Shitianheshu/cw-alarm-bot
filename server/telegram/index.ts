@@ -28,13 +28,16 @@ export const sendMessage = async (
       const retryAfter = err.parameters?.retry_after || 5;
       await delay((retryAfter + 1) * 1000);
       console.log(`Rate limited — waiting ${retryAfter}s...`);
-
-      return { success: false, message: "Failed to send message" };
-    } else {
-      console.error(err);
-      
-      return { success: false, message: "Failed to send message" };
+      try {
+        await bot.telegram.sendMessage(id, message, { parse_mode: "HTML" });
+        return { success: true, message: "Message sent successfully" };
+      } catch (retryErr) {
+        console.error(retryErr);
+        return { success: false, message: "Failed to send message" };
+      }
     }
+    console.error(err);
+    return { success: false, message: "Failed to send message" };
   }
 };
 

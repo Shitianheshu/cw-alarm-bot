@@ -21,6 +21,7 @@ import * as jobController from "./controller/jobController";
 import * as blockedClientController from "./controller/blockedClientController";
 import * as adminController from "./controller/adminController";
 import * as marketAnalysisController from "./controller/marketAnalysisController";
+import { writeBidText } from "./service/bidWriter";
 import UserModel from "./models/User";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -414,10 +415,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/market/job-content", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    const source = String(req.query.source || "crowdworks");
+    const jobId = Number(req.query.jobId);
+    if (!["crowdworks", "lancers", "coconala"].includes(source) || !Number.isInteger(jobId) || jobId <= 0) {
+      return res.status(400).json({ error: "source and jobId are required" });
+    }
+    try {
+      res.json(await marketAnalysisController.getJobContent(source, jobId));
+    } catch (error: any) {
+      res.status(502).json({ error: error.message || "Failed to load the job description" });
+    }
+  });
+
+  app.post("/api/admin/market/bid-text", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    const source = String(req.body?.source || "crowdworks");
+    const jobId = Number(req.body?.jobId);
+    if (!["crowdworks", "lancers", "coconala"].includes(source) || !Number.isInteger(jobId) || jobId <= 0) {
+      return res.status(400).json({ error: "source and jobId are required" });
+    }
+    try {
+      res.json(await writeBidText({
+        source,
+        jobId,
+        telegramId: Number(req.telegramId) || null,
+        fresh: Boolean(req.body?.fresh),
+      }));
+    } catch (error: any) {
+      res.status(502).json({ error: error.message || "Failed to write the bid" });
+    }
+  });
+
+  app.get("/api/admin/market/alerts", requireAuth, requireAdmin, async (req: any, res: Response) => {
+    try {
+      const since = typeof req.query.since === "string" && req.query.since ? new Date(req.query.since) : null;
+      const limit = Number(req.query.limit);
+      res.json(await marketAnalysisController.listNewJobAlerts({
+        since,
+        limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+      }));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load new job alerts" });
+    }
+  });
+
   app.get("/api/admin/market/report", requireAuth, requireAdmin, async (req: any, res: Response) => {
     try {
       const hours = Number(req.query.hours);
-      const report = await marketAnalysisController.buildMarketReport(Number.isFinite(hours) ? hours : undefined);
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
+      const report = await marketAnalysisController.buildMarketReport({
+        hours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
+        from,
+        to,
+      });
       res.json(report);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to build market report" });
@@ -427,11 +478,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/market/timestamps", requireAuth, requireAdmin, async (req: any, res: Response) => {
     try {
       const hours = Number(req.query.hours);
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", "attachment; filename=\"cw-jobs.csv\"");
       await marketAnalysisController.writeTimestampCsv((chunk: string) => {
         res.write(chunk);
-      }, Number.isFinite(hours) ? hours : undefined);
+      }, Number.isFinite(hours) && hours > 0 ? hours : undefined, { from, to });
       res.end();
     } catch (error: any) {
       if (!res.headersSent) res.status(500).json({ error: error.message || "Failed to export timestamps" });

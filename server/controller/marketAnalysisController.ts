@@ -1,6 +1,8 @@
 export {
   buildMarketReport,
+  getJobContent,
   getMarketStatus,
+  listNewJobAlerts,
   publishMarketReport,
   recordLiveJob,
   scanRecentJobs,
